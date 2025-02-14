@@ -86,7 +86,7 @@ def main(args):
     # Get the pretrained image processor and model
     if ("vivit" in args.model_name):
         lora_config = LoraConfig(
-            target_modules=["query", "value"],
+            target_modules=["query", "key", "value"],
             bias="none"
         )
         image_processor = VivitImageProcessor.from_pretrained(base_model_name)
@@ -131,6 +131,14 @@ def main(args):
     
     dataset_type = os.path.splitext(data_files["train"])[0]
 
+    name = None
+    prefix = 'train_data_'
+    substring = dataset_type[len(prefix):]
+    if ("vivit" in args.model_name):
+        name = "vivit_" + substring + f"_batch_{args.batch_size}"
+    elif ("timesformer" in args.model_name):
+        name = "times_" + substring + f"_batch_{args.batch_size}"
+
 
     # Initialize wandb with project and configuration details
     wandb.init(
@@ -141,7 +149,8 @@ def main(args):
             "k": n_splits,
             "data_type": dataset_type,
             "model_name": base_model_name
-        }
+        },
+        name=name
     )
 
 

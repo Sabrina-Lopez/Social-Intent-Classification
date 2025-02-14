@@ -84,6 +84,14 @@ def main(args):
 
     dataset_type = os.path.splitext(data_files["test"])[0]
 
+    name = None
+    prefix = 'test_data_'
+    substring = dataset_type[len(prefix):]
+    if ("vivit" in args.model_name):
+        name = "vivit_" + substring
+    elif ("timesformer" in args.model_name):
+        name = "times_" + substring
+
 
     if ("finetuned-train" in args.model_name):
         finetune_bool = True
@@ -97,7 +105,8 @@ def main(args):
             "data_type": dataset_type,
             "model_name": base_model_name,
             "finetune_bool": finetune_bool
-        }
+        },
+        name=name
     )
 
 
