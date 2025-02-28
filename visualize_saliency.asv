@@ -1,0 +1,5 @@
+adults_gaze_data = dir("./adults-gaze-data");
+adults_gaze_data(1:2, :) = [];
+filename = adults_gaze_data(1);
+
+if

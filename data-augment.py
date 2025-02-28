@@ -2,18 +2,26 @@ import os
 import cv2
 import numpy as np
 import random
+from PIL import Image
+import torch
+import torchvision.transforms.functional as TF
 
 
-random.seed(0)
-np.random.seed(0)
+seed = 0
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
-# Video length to get all train/test videos of that length
-vid_length = 100
-# Boolean if want all combinations of augmentations to be applied to the videos or just once at a time
-mix_bool = True
+# Video length and augmentation mode
+vid_length = 33
+mix_bool = False
 
-
+# Setup data paths
 data_path_name = 'data_' + str(vid_length) + '_unmod'
 data_path = os.path.join('./', data_path_name)
 train_folder = os.path.join(data_path, 'train')
@@ -21,27 +29,12 @@ test_folder = os.path.join(data_path, 'test')
 data_folders = [train_folder, test_folder]
 class_folders = ['Help', 'Hinder', 'Physical']
 
-output_data_path_name = None
-output_data_path = None
-output_train_folder = None
-output_test_folder = None
-output_data_folders = None
-
 if mix_bool:
     output_data_path_name = 'data_' + str(vid_length) + '_mod' + '_mix'
     output_data_path = os.path.join('./', output_data_path_name)
     output_train_folder = os.path.join(output_data_path, 'train')
     output_test_folder = os.path.join(output_data_path, 'test')
     output_data_folders = [output_train_folder, output_test_folder]
-
-    if not os.path.exists(output_data_path):
-        os.mkdir(output_data_path)
-
-    if not os.path.exists(output_train_folder):
-        os.mkdir(output_train_folder)
-
-    if not os.path.exists(output_test_folder):
-        os.mkdir(output_test_folder)
 else:
     output_data_path_name = 'data_' + str(vid_length) + '_mod' + '_single'
     output_data_path = os.path.join('./', output_data_path_name)
@@ -49,35 +42,46 @@ else:
     output_test_folder = os.path.join(output_data_path, 'test')
     output_data_folders = [output_train_folder, output_test_folder]
 
-    if not os.path.exists(output_data_path):
-        os.mkdir(output_data_path)
+# Create output directories if needed
+if not os.path.exists(output_data_path):
+    os.mkdir(output_data_path)
+for folder in output_data_folders:
+    if not os.path.exists(folder):
+        os.mkdir(folder)
+    for class_name in class_folders:
+        class_out_path = os.path.join(folder, class_name)
+        if not os.path.exists(class_out_path):
+            os.mkdir(class_out_path)
 
-    if not os.path.exists(output_train_folder):
-        os.mkdir(output_train_folder)
-
-    if not os.path.exists(output_test_folder):
-        os.mkdir(output_test_folder)
-
-for class_name in class_folders:
-    if not os.path.exists(os.path.join(output_train_folder, class_name)):
-        os.mkdir(os.path.join(output_train_folder, class_name))
-    
-    if not os.path.exists(os.path.join(output_test_folder, class_name)):
-        os.mkdir(os.path.join(output_test_folder, class_name))
-
-
-angle_map = {
-    90: cv2.ROTATE_90_CLOCKWISE,
-    180: cv2.ROTATE_180,
-    270: cv2.ROTATE_90_COUNTERCLOCKWISE
-}
-lighting = [0.1, 0.3, 0.5, 0.7, 0.9]
+# Define augmentation parameter lists
+angles = [90, 180, 270]  
+# For lighting, these are added to 1 (e.g., 1 + 0.1 = 1.1 means a slight brightness boost)
+lighting = [0.1, 0.3, 0.5, 0.7, 0.9]  
 zoom = [0.5, 0.7, 0.9]
-augmentations = [angle_map, lighting, zoom]
 
-num_help, num_hinder, num_phy = 12, 7, 9
+# Helper function to apply all three torchvision transforms
+def apply_torchvision_transforms(frame, angle, brightness_factor, zoom_factor):
+    # Convert BGR to RGB then to PIL image
+    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-# For each video in the train and test directories, create new videos for each of the augmentation options and save them to data directory
+    # Rotate image
+    img = TF.rotate(img, angle)
+
+    # Adjust brightness
+    img = TF.adjust_brightness(img, brightness_factor)
+
+    # Resize image for zoom
+    # PIL's size returns (width, height)
+    orig_width, orig_height = img.size
+    new_width = int(orig_width * zoom_factor)
+    new_height = int(orig_height * zoom_factor)
+    img = TF.resize(img, (new_height, new_width))
+
+    # Convert back to OpenCV BGR image
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+
+# Process each video in both train and test folders
 for idx, data_folder in enumerate(data_folders):
     output_data_folder = output_data_folders[idx]
 
@@ -89,60 +93,82 @@ for idx, data_folder in enumerate(data_folders):
             video_path = os.path.join(class_path, video)
             cap = cv2.VideoCapture(video_path)
             frames = []
-
             while True:
                 ret, frame = cap.read()
-                if not ret: break
+                if not ret: 
+                    break
                 frames.append(frame)
             cap.release()
 
             if mix_bool:
-                # Randomly choose one rotation, one lighting value, and one zoom value
-                chosen_angle = random.choice(list(angle_map.keys()))
-                chosen_light = random.choice([0, 1, 2, 3, 4])
-                chosen_zoom = random.choice([0, 1, 2])
+                angle_idx = random.choice(range(len(angles)))
+                light_idx = random.choice(range(len(lighting)))
+                zoom_idx = random.choice(range(len(zoom)))
+                
+                chosen_angle = angles[angle_idx]
+                chosen_light = lighting[light_idx]
+                chosen_zoom = zoom[zoom_idx]
+                brightness_factor = 1 + chosen_light
 
-                # First, apply the rotation to all frames
-                frames_aug = [cv2.rotate(frame, angle_map[chosen_angle]) for frame in frames]
-
-                # Then, apply the lighting augmentation using cv2.addWeighted
+                # Apply all augmentations to each frame
                 frames_aug = [
-                    cv2.addWeighted(frame, 1 + lighting[chosen_light], np.zeros(frame.shape, frame.dtype), 0, 0)
-                    for frame in frames_aug
+                    apply_torchvision_transforms(frame, chosen_angle, brightness_factor, chosen_zoom)
+                    for frame in frames
                 ]
 
-                # Finally, apply the zoom augmentation
-                frames_aug = [
-                    cv2.resize(frame, (int(frame.shape[1] * zoom[chosen_zoom]), int(frame.shape[0] * zoom[chosen_zoom])))
-                    for frame in frames_aug
-                ]
-
-                new_video_path = os.path.join(output_class_path, f'{video[:-4]}_mix_{chosen_angle}_{chosen_light}_{chosen_zoom}.mp4')
+                new_video_path = os.path.join(
+                    output_class_path,
+                    f'{video[:-4]}_mix_{angle_idx}_{light_idx}_{zoom_idx}.mp4'
+                )
             else:
                 aug_idx = random.choice([0, 1, 2])
+                frames_aug = []
                 if aug_idx == 0:
                     # Rotation only
-                    chosen_angle = random.choice(list(angle_map.keys()))
-                    frames_aug = [cv2.rotate(frame, angle_map[chosen_angle]) for frame in frames]
-                    new_video_path = os.path.join(output_class_path, f'{video[:-4]}_single_{0}_{aug_idx}.mp4')
+                    angle_idx = random.choice(range(len(angles)))
+                    chosen_angle = angles[angle_idx]
+
+                    for frame in frames:
+                        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                        img = TF.rotate(img, chosen_angle)
+                        frame_aug = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                        frames_aug.append(frame_aug)
+
+                    new_video_path = os.path.join(output_class_path, f'{video[:-4]}_single_0_{angle_idx}.mp4')
                 elif aug_idx == 1:
                     # Lighting only
-                    chosen_light = random.choice([0, 1, 2, 3, 4])
-                    frames_aug = [
-                        cv2.addWeighted(frame, 1 + lighting[chosen_light], np.zeros(frame.shape, frame.dtype), 0, 0)
-                        for frame in frames
-                    ]
-                    new_video_path = os.path.join(output_class_path, f'{video[:-4]}_single_{1}_{chosen_light}.mp4')
+                    light_idx = random.choice(range(len(lighting)))
+                    chosen_light = lighting[light_idx]
+                    brightness_factor = 1 + chosen_light
+
+                    for frame in frames:
+                        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                        img = TF.adjust_brightness(img, brightness_factor)
+                        frame_aug = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                        frames_aug.append(frame_aug)
+
+                    new_video_path = os.path.join(output_class_path, f'{video[:-4]}_single_1_{light_idx}.mp4')
                 elif aug_idx == 2:
                     # Zoom only
-                    chosen_zoom = random.choice([0, 1, 2])
-                    frames_aug = [
-                        cv2.resize(frame, (int(frame.shape[1] * zoom[chosen_zoom]), int(frame.shape[0] * zoom[chosen_zoom])))
-                        for frame in frames
-                    ]
-                    new_video_path = os.path.join(output_class_path, f'{video[:-4]}_single_{2}_{chosen_zoom}.mp4')
+                    zoom_idx = random.choice(range(len(zoom)))
+                    chosen_zoom = zoom[zoom_idx]
 
-            out = cv2.VideoWriter(new_video_path, cv2.VideoWriter_fourcc(*'mp4v'), 30, (frames_aug[0].shape[1], frames_aug[0].shape[0]))
+                    for frame in frames:
+                        img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                        orig_width, orig_height = img.size
+                        new_width = int(orig_width * chosen_zoom)
+                        new_height = int(orig_height * chosen_zoom)
+                        img = TF.resize(img, (new_height, new_width))
+                        frame_aug = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                        frames_aug.append(frame_aug)
+
+                    new_video_path = os.path.join(output_class_path, f'{video[:-4]}_single_2_{zoom_idx}.mp4')
+
+            # Write out the augmented video (using the size of the first frame)
+            height, width = frames_aug[0].shape[:2]
+            out = cv2.VideoWriter(new_video_path, cv2.VideoWriter_fourcc(*'mp4v'), 30, (width, height))
+
             for frame in frames_aug:
                 out.write(frame)
+
             out.release()
