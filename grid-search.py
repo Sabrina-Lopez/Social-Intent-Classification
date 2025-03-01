@@ -54,13 +54,19 @@ def grid_search():
                     print(f"  Attention dropout: {a_dropout}")
                     print("=" * 50)
 
+                    
+                    l_alpha_name = str(l_alpha).replace(".", "")
+                    l_dropout_name = str(l_dropout).replace(".", "")
+                    h_dropout_name = str(h_dropout).replace(".", "")
+                    a_dropout_name = str(a_dropout).replace(".", "")
+
 
                     # Create a unique project title for wandb using key hyperparameters
                     project_title = (
                         f"{model_name.replace('/', '_')}_{finetune}_"
-                        f"bs{batch_size}_ep{epochs}_k{k_fold}_"
-                        f"lalpha{str(l_alpha).replace(".", "")}_ldropout{str(l_dropout).replace(".", "")}_"
-                        f"hdropout{str(h_dropout).replace(".", "")}_attndropout{str(a_dropout).replace(".", "")}"
+                        f"bs_{batch_size}_ep_{epochs}_k_{k_fold}_"
+                        f"lalpha_{l_alpha_name}_ldropout_{l_dropout_name}_"
+                        f"hdropout_{h_dropout_name}_attndropout_{a_dropout_name}"
                     )
 
 
@@ -111,11 +117,15 @@ def grid_search():
                 print("=" * 50)
 
 
+                h_dropout_name = str(h_dropout).replace(".", "")
+                a_dropout_name = str(a_dropout).replace(".", "")
+
+
                 # Create a unique project title for wandb using key hyperparameters
                 project_title = (
                     f"{model_name.replace('/', '_')}_{finetune}_"
-                    f"bs{batch_size}_ep{epochs}_k{k_fold}_"
-                    f"hdropout{str(h_dropout).replace(".", "")}_attndropout{str(a_dropout).replace(".", "")}"
+                    f"bs_{batch_size}_ep_{epochs}_k_{k_fold}_"
+                    f"hdropout_{h_dropout_name}_attndropout_{a_dropout_name}"
                 )
 
                 
