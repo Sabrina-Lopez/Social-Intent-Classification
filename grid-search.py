@@ -12,7 +12,8 @@ def grid_search():
     finetune_methods = ["default", "lora"]
     batch_sizes = [4, 8, 16, 32]
     epochs_list = [20, 30, 40]
-    k_folds = [4, 5]
+    k_folds = [1]
+    # k_folds = [1, 4]
 
     lora_alpha = [8, 16, 32, 64]
     lora_dropout = [0.0, 0.1, 0.2, 0.4]
@@ -58,8 +59,8 @@ def grid_search():
                     project_title = (
                         f"{model_name.replace('/', '_')}_{finetune}_"
                         f"bs{batch_size}_ep{epochs}_k{k_fold}_"
-                        f"lalpha{l_alpha}_ldropout{l_dropout}_"
-                        f"hdropout{h_dropout}_attndropout{a_dropout}"
+                        f"lalpha{str(l_alpha).replace(".", "")}_ldropout{str(l_dropout).replace(".", "")}_"
+                        f"hdropout{str(h_dropout).replace(".", "")}_attndropout{str(a_dropout).replace(".", "")}"
                     )
 
 
@@ -114,7 +115,7 @@ def grid_search():
                 project_title = (
                     f"{model_name.replace('/', '_')}_{finetune}_"
                     f"bs{batch_size}_ep{epochs}_k{k_fold}_"
-                    f"hdropout{h_dropout}_attndropout{a_dropout}"
+                    f"hdropout{str(h_dropout).replace(".", "")}_attndropout{str(a_dropout).replace(".", "")}"
                 )
 
                 

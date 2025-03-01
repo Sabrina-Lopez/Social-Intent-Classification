@@ -6,7 +6,8 @@ def main():
     # batch_sizes = [16]
     batch_sizes = [4, 8, 16]
     epoch_lens = [5]
-    ks = [4]
+    # ks = [4]
+    ks = [1]
     data_files = [
         # "train_data_33_unmod.csv",
         # "train_data_67_unmod.csv",
