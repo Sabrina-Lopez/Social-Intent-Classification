@@ -40,14 +40,7 @@ def main(args):
     n_splits = args.k
 
 
-    # Retrieve and enable the loading of the train data
-    data_file = {"train": args.data_file}
-    data_csv = load_dataset('csv', data_files=data_file, sep=',')
-
-    data_csv["train"] = data_csv["train"].map(preprocess_function)
-    dataset = data_csv["train"].with_format(
-        "torch", columns=["video_path", "start", "end", "label"]
-    )
+    csv_files = args.data_files.split(',')
 
 
     # Define custom labels
@@ -85,20 +78,6 @@ def main(args):
 
     # Based on the fine-tuning method, setup the models accordingly
     finetune_method = args.finetune
-
-
-    # Declare k-fold
-    # kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    kf, fold_iter = None, None
-    # Set up the fold iterator
-    if n_splits > 1:
-        kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-        fold_iter = kf.split(dataset)
-    else:
-        # Single fold: perform a simple train/validation split (80/20)
-        indices = list(range(len(dataset)))
-        train_ids, val_ids = train_test_split(indices, test_size=0.2, random_state=42)
-        fold_iter = [(train_ids, val_ids)]
 
     
     # Setup LoRA configuration
@@ -166,15 +145,12 @@ def main(args):
                 param.requires_grad = False
     
 
-    dataset_type = os.path.splitext(data_file["train"])[0]
-
+    dataset_type = "fold_dataset"
     name = None
-    prefix = 'train_data_'
-    substring = dataset_type[len(prefix):]
     if ("vivit" in args.model_name):
-        name = "vivit_" + substring + f"_batch_{args.batch_size}"
+        name = f"vivit_fold_batch_{args.batch_size}"
     elif ("timesformer" in args.model_name):
-        name = "times_" + substring + f"_batch_{args.batch_size}"
+        name = f"times_fold_batch_{args.batch_size}"
 
 
     """
@@ -209,35 +185,40 @@ def main(args):
 
 
     # Train the model using k-fold cross-validation and custom dataset
-    for fold, (train_ids, val_ids) in enumerate(fold_iter):
+    for fold in range(n_splits):
         print(f"=== Fold {fold+1} / {n_splits} ===")
-        
-        train_ids = list(map(int, train_ids))
-        val_ids = list(map(int, val_ids))
 
-        # Create subsets
-        train_subset = Subset(dataset, train_ids)
-        val_subset = Subset(dataset, val_ids)
 
-        # Create our custom VideoDataset
-        train_dataset = VideoDataset(train_subset, image_processor, sample_frame_indices)
-        val_dataset = VideoDataset(val_subset, image_processor, sample_frame_indices)
+        # Load the validation dataset for the current fold
+        val_data = load_dataset('csv', data_files={"validation": csv_files[fold]}, sep=',')
+        val_data["validation"] = val_data["validation"].map(preprocess_function)
+        val_dataset = val_data["validation"].with_format("torch", columns=["video_path", "start", "end", "label"])
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        # Load the training dataset from the remaining CSV files
+        train_files = [csv_files[i] for i in range(len(csv_files)) if i != fold]
+        train_data = load_dataset('csv', data_files={"train": train_files}, sep=',')
+        train_data["train"] = train_data["train"].map(preprocess_function)
+        train_dataset = train_data["train"].with_format("torch", columns=["video_path", "start", "end", "label"])
 
-        
+        # Create our custom VideoDataset for training and validation
+        train_video_dataset = VideoDataset(train_dataset, image_processor, sample_frame_indices)
+        val_video_dataset = VideoDataset(val_dataset, image_processor, sample_frame_indices)
+
+
         accumulation_steps = None
         # If fine-tuning with LoRA and a batch size of 16 is provided,
-        # use an effective batch size of 8 and accumulate gradients over 2 mini-batches.
+        # use an effective batch size of 8 and accumulate gradients over 2 mini-batches
         if finetune_method == "lora" and args.batch_size == 16:
             effective_batch_size = 8
             accumulation_steps = 2
         else:
             effective_batch_size = args.batch_size
             accumulation_steps = 1
-        
-        
+
+
+        train_loader = DataLoader(train_video_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_video_dataset, batch_size=batch_size, shuffle=False)
+
         # Re-initialize or re-load the model each fold to keep re-frozen structure
         if ("vivit" in args.model_name):
             model = VivitForVideoClassification.from_pretrained(
@@ -404,7 +385,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epochs",
         type=int,
-        default=10,
+        default=5,
         help="Number of epochs for fine-tuning"
     )
     parser.add_argument(
@@ -414,10 +395,10 @@ if __name__ == "__main__":
         help="Number of folds for K-fold cross validation"
     )
     parser.add_argument(
-        "--data_file",
+        "--data_files",
         type=str,
-        default="test_data_100_unmod.csv",
-        help="Path to the test data CSV file"
+        default="balanced_train_f1_data_unmod.csv,balanced_train_f2_data_unmod.csv,balanced_train_f3_data_unmod.csv,balanced_train_f4_data_unmod.csv",
+        help="CSV files"
     )
     parser.add_argument(
         "--model_name",
@@ -453,7 +434,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lora_alpha",
         type=float,
-        default=8,
+        default=16,
         help="The alpha value for LoRA fine-tuning"
     )
     parser.add_argument(
@@ -465,7 +446,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--balanceBool",
         type=bool,
-        default=False,
+        default=True,
         help="Boolean for is using balanced split for dataset or not"
     )
     args = parser.parse_args()

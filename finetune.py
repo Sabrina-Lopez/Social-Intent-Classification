@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 from datasets import load_dataset
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
 from dataloader_class import VideoDataset
 from torch.utils.data import Subset
 import matplotlib.pyplot as plt
@@ -41,8 +41,8 @@ def main(args):
 
 
     # Retrieve and enable the loading of the train data
-    data_files = {"train": args.data_file}
-    data_csv = load_dataset('csv', data_files=data_files, sep=',')
+    data_file = {"train": args.data_file}
+    data_csv = load_dataset('csv', data_files=data_file, sep=',')
 
     data_csv["train"] = data_csv["train"].map(preprocess_function)
     dataset = data_csv["train"].with_format(
@@ -88,7 +88,17 @@ def main(args):
 
 
     # Declare k-fold
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    # kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    kf, fold_iter = None, None
+    # Set up the fold iterator
+    if n_splits > 1:
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+        fold_iter = kf.split(dataset)
+    else:
+        # Single fold: perform a simple train/validation split (80/20)
+        indices = list(range(len(dataset)))
+        train_ids, val_ids = train_test_split(indices, test_size=0.2, random_state=42)
+        fold_iter = [(train_ids, val_ids)]
 
     
     # Setup LoRA configuration
@@ -132,7 +142,7 @@ def main(args):
                 target_modules=["qkv"],
                 # target_modules=["encoder.layer.10", "encoder.layer.11"], # Does not work
                 bias="none",
-                r=8,
+                r=r,
                 lora_alpha=args.lora_alpha,
                 lora_dropout=args.lora_dropout
             )
@@ -156,7 +166,7 @@ def main(args):
                 param.requires_grad = False
     
 
-    dataset_type = os.path.splitext(data_files["train"])[0]
+    dataset_type = os.path.splitext(data_file["train"])[0]
 
     name = None
     prefix = 'train_data_'
@@ -187,16 +197,17 @@ def main(args):
             "finetune": finetune_method,
             "lora_r": r,
             "lora_alpha": args.lora_alpha,
-            "lora_dropout": args.lora_dropout
+            "lora_dropout": args.lora_dropout,
+            "balanced": args.balanceBool
         },
         name=name
     )
 
 
     # Train the model using k-fold cross-validation and custom dataset
-    for fold, (train_ids, val_ids) in enumerate(kf.split(dataset)):
+    for fold, (train_ids, val_ids) in enumerate(fold_iter):
         print(f"=== Fold {fold+1} / {n_splits} ===")
-        
+
         train_ids = list(map(int, train_ids))
         val_ids = list(map(int, val_ids))
 
@@ -208,7 +219,19 @@ def main(args):
         train_dataset = VideoDataset(train_subset, image_processor, sample_frame_indices)
         val_dataset = VideoDataset(val_subset, image_processor, sample_frame_indices)
 
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+        accumulation_steps = None
+        # If fine-tuning with LoRA and a batch size of 16 is provided,
+        # use an effective batch size of 8 and accumulate gradients over 2 mini-batches.
+        if finetune_method == "lora" and args.batch_size == 16:
+            effective_batch_size = 8
+            accumulation_steps = 2
+        else:
+            effective_batch_size = args.batch_size
+            accumulation_steps = 1
+
+
+        train_loader = DataLoader(train_dataset, batch_size=effective_batch_size, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         # Re-initialize or re-load the model each fold to keep re-frozen structure
@@ -255,7 +278,7 @@ def main(args):
             model.train()
             total_loss = 0
 
-            for batch in train_loader:
+            for i, batch in enumerate(train_loader):
                 pixel_values = batch["pixel_values"].to(device)
                 labels = batch["label"].to(device)
 
@@ -263,11 +286,21 @@ def main(args):
                 outputs = model(pixel_values=pixel_values)
                 logits = outputs.logits
                 loss = criterion(logits, labels)
+                loss = loss / accumulation_steps # Divide loss by accumulation steps so gradients accumulate properly
                 loss.backward()
+                total_loss += loss.item() * accumulation_steps # Multiply back to get the original loss value for logging
+
+                # Perform optimizer step every accumulation_steps mini-batches
+                if (i + 1) % accumulation_steps == 0:
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+            
+            # In case the last mini-batch doesn't trigger the accumulation step:
+            if (i + 1) % accumulation_steps != 0:
                 optimizer.step()
-
-                total_loss += loss.item()
-
+                optimizer.zero_grad()
+            
             avg_train_loss = total_loss / len(train_loader)
             train_losses.append(avg_train_loss)
             print(f"[Fold {fold+1}, Epoch {epoch+1}] Train loss: {avg_train_loss:.4f}")
@@ -345,25 +378,26 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epochs",
         type=int,
-        default=5,
+        default=10,
         help="Number of epochs for fine-tuning"
     )
     parser.add_argument(
         "--k",
         type=int,
-        default=4,
+        default=1,
         help="Number of folds for K-fold cross validation"
     )
     parser.add_argument(
         "--data_file",
         type=str,
-        default="test_data_33_unmod.csv",
+        default="train_data_100_unmod.csv",
         help="Path to the test data CSV file"
     )
     parser.add_argument(
         "--model_name",
         type=str,
-        default="google/vivit-b-16x2-kinetics400",
+        default="facebook/timesformer-base-finetuned-k400",
+        # default="google/vivit-b-16x2-kinetics400",
         help="Pretrained model or saved fine-tuned model name to use"
     )
     parser.add_argument(
@@ -402,6 +436,12 @@ if __name__ == "__main__":
         type=str,
         default="Fine-tuned Intent Classification",
         help="Title for the current Wandb project"
+    )
+    parser.add_argument(
+        "--balanceBool",
+        type=bool,
+        default=False,
+        help="Boolean for is using balanced split for dataset or not"
     )
     args = parser.parse_args()
     main(args)
