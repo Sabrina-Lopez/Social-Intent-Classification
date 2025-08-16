@@ -5,5 +5,9 @@
 # big zips at repo root
 /videos.zip
 **/videos.zip
+/videos
+**/videos
 /vivit-factorized-files.zip
 **/vivit-factorized-files.zip
+/vivit-factorized-files
+**/vivit-factorized-files
