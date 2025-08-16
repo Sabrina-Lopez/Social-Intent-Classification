@@ -4,8 +4,11 @@ import shutil
 
 vid_length = 100
 
-train_txt_file = 'train_' + str(vid_length) + '.txt'
-test_txt_file = 'test_' + str(vid_length) + '.txt'
+# train_txt_file = 'train_' + str(vid_length) + '.txt'
+# test_txt_file = 'test_' + str(vid_length) + '.txt'
+
+train_txt_file = 'train_latest.txt'
+test_txt_file = 'test_latest.txt'
 
 # Text files
 train_txt_path = os.path.join('./text-files', train_txt_file)
@@ -33,9 +36,11 @@ with open(test_txt_path, 'r') as test_file:
         test_vids_names.append(name)
         test_vids_labels.append(label)
 
+
 # Path to all the videos and path to save the organized dataset for later use
 vid_path = os.path.join('videos')
-data_path_name = 'data_' + str(vid_length) + '_unmod'
+# data_path_name = 'data_' + str(vid_length) + '_unmod'
+data_path_name = 'data_' + str(vid_length) + '_unmod_latest'
 data_path = os.path.join('./', data_path_name)
 
 all_vid_folders = os.listdir(vid_path)
@@ -65,17 +70,18 @@ for i, vid_name in enumerate(train_vids_names):
         concat_vid_name = vid_name[:16]
     else: print('The label is not valid or is missing.')
 
-    # print('Video name:', vids_name)
-    # print('Folder name:', concat_vids_name)
+    # print('Video name:', vid_name)
+    # print('Folder name:', concat_vid_name)
 
     if concat_vid_name in all_vid_folders:
         folder_path = os.path.join(vid_path, concat_vid_name)
         for vid in os.listdir(folder_path):
-            if vid == vid_name:
+            if vid_name in vid:
                 # print('Found the video:', vid)
                 train_vid_paths.append(os.path.join(folder_path, vid))
                 break
     else: print('The video name is not in the data folders.')
+    
 
 # For each video listed in the test file, find its path from the videos directory
 for i, vid_name in enumerate(test_vids_names):
@@ -94,7 +100,7 @@ for i, vid_name in enumerate(test_vids_names):
     if concat_vid_name in all_vid_folders:
         folder_path = os.path.join(vid_path, concat_vid_name)
         for vid in os.listdir(folder_path):
-            if vid == vid_name:
+            if vid_name in vid:
                 # print('Found the video:', vid)
                 test_vid_paths.append(os.path.join(folder_path, vid))
                 break

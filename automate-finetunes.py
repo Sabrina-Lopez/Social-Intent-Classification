@@ -1,111 +1,127 @@
 import subprocess
 import itertools
+from collections import defaultdict
+import wandb
+from dotenv import load_dotenv
+import os
+
+
+load_dotenv()
+wandb.login(key = os.environ.get("WANDB_API_KEY"), relogin=True)
+
 
 def main():
+    api = wandb.Api()
+    project_path = "sabrinameganlopez015-live-robotics/Fine-tuned Intent Classification 6-Model Training"
+
+    project_exists = False
+    # Figure out once whether the project actually exists
+    try:
+        _ = api.project(project_path)
+        project_exists = True
+    except ValueError:
+        project_exists = False
+
     # Define the parameter lists
-    # batch_sizes = [16]
     batch_sizes = [
-        # 4, 
-        # 8, 
-        16]
+        4,
+        # 8,
+        # 16
+        ]
+    # batch_sizes.reverse()
     epoch_lens = [
-        # 40, 
-        # 50, 
         60]
-    # ks = [4]
     ks = [1]
     data_files = [
-        # "train_data_33_unmod.csv",
-        # "train_data_67_unmod.csv",
-        "train_data_100_unmod.csv",
-        # "train_data_33_mod_single.csv",
-        # "train_data_67_mod_single.csv",
-        # "train_data_100_mod_single.csv",
-        # "train_data_33_mod_mix.csv",
-        # "train_data_67_mod_mix.csv",
-        # "train_data_100_mod_mix.csv"
-        
+        "train_data_100_unmod_latest.csv"
     ]
     model_names = [
-        "google/vivit-b-16x2-kinetics400",
-        "facebook/timesformer-base-finetuned-k400"
+        # "facebook/timesformer-base-finetuned-k600",
+        # "google/vivit-b-16x2-kinetics400",
+        # "google/vivit-b-16x2-kinetics400-fe", # Not available via Hugging Face
+        # "facebook/timesformer-base-finetuned-k400",
+        # "facebook/timesformer-base-finetuned-ssv2",
+        "facebook/vjepa2-vitl-fpc16-256-ssv2",
+        # "facebook/vjepa2-vitl-fpc32-256-diving48"
     ]
     finetunes = [
-        "default", # Fine-tuning that involves manually freezing model layers 
-        "lora"
+        "default" # Fine-tuning that involves manually freezing model layers 
     ]
-
-
-    # Path to your fine-tune script
     finetune_scripts = [
-        # "finetune.py" #,
-        "balanced-finetune.py"
+        # "finetune.py",
+        "seedless-finetune.py",
+        "seedless-finetune-no-vjepa2.py"
     ]
-
-
-    lora_alpha = [8, 16, 32, 64]
-    lora_dropout = [0.0, 
-                    # 0.1, 
-                    0.2, 
-                    # 0.3
-                    ]
 
     hidden_dropout = [0.0, 
-                    0.1, 
-                    0.2, 
-                    0.3]
+                    # 0.05,
+                    # 0.1, 
+                    # 0.15,
+                    ]
+    # hidden_dropout.reverse()
     attn_dropout = [0.0, 
-                    0.1, 
-                    0.2, 
-                    0.3]
+                    # 0.05,
+                    # 0.1, 
+                    # 0.15,
+                    ]
+    lrs = [# 0.0001,
+           0.00005,
+           # 0.00001
+           ]
+    w_decays = [# 0.1,
+                0.01,
+                # 0.05,
+                # 0.001,
+                # 0.0001
+                ]
+    stoch_depths = [0.0,
+                    # 0.1,
+                    # 0.2,
+                    # 0.3
+                ]
+    label_smooth_vals = [0.0,
+                         # 0.015,
+                         # 0.03,
+                         # 0.05,
+                         # 0.1,
+                         # 0.15,
+                         # 0.2,
+                         # 0.25,
+                         # 0.3
+                        ]
 
+    for i in range(0, 5):
+        for model_name, finetune, script, dataset, bs, epochs, k, h_dropout, a_dropout, lr, decay, stoch_depth, label_smooth_val in itertools.product(model_names, finetunes, finetune_scripts, data_files, batch_sizes, epoch_lens, ks, hidden_dropout, attn_dropout, lrs, w_decays, stoch_depths, label_smooth_vals):
+            
+            if "timesformer" in model_name and "no-vjepa2" not in script: continue
+            if "vjepa2" in model_name and "no-vjepa2" in script: continue
+            if "vivit" in model_name and "no-vjepa2" not in script: continue
 
-    for model_name in model_names:
-        # For the two models, iterate over all data files
-        for data_file in data_files:
-            for bs, epochs, k, l_alpha, l_dropout, h_dropout, a_dropout in itertools.product(batch_sizes, epoch_lens, ks, lora_alpha, lora_dropout, hidden_dropout, attn_dropout):
-                for finetune in finetunes:
-                    for script in finetune_scripts:
-                        
-                        if (script == "finetune.py"):
-                            print(f"\nRunning fine-tune with finetune={finetune}, batch_size={bs}, data_file={data_file}, model_name={model_name}")
-                            cmd = [
-                                "python", script,
-                                "--batch_size", str(bs),
-                                "--epochs", str(epochs),
-                                "--k", str(k),
-                                "--data_file", data_file,
-                                "--model_name", model_name,
-                                "--finetune", finetune,
-                                "--lora_alpha", l_alpha,
-                                "--lora_dropout", l_dropout,
-                                "--hidden_dropout", h_dropout,
-                                "--attn_dropout", a_dropout
-                            ]
-                            result = subprocess.run(cmd, capture_output=True, text=True)
-                            print(result.stdout)
-                            
-                            if result.stderr:
-                                print("Error:", result.stderr)
+            data_file = {"train": dataset}
+            dataset_type = os.path.splitext(data_file["train"])[0]
+            
+            print(f"\nRunning fine-tune with finetune={finetune}, batch_size={bs}, data_file={dataset}, model_name={model_name}, lr={lr}, decay={decay}, hd={h_dropout}, ad={a_dropout}")
 
-                        elif (script == "balanced-finetune.py"):
-                            balanced_data_files = "balanced_train_f1_data_unmod.csv,balanced_train_f2_data_unmod.csv,balanced_train_f3_data_unmod.csv,balanced_train_f4_data_unmod.csv"
-                            print(f"\nRunning fine-tune with finetune={finetune}, batch_size={bs}, data_files={balanced_data_files}, model_name={model_name}")
-
-                            cmd = [
-                                "python", script,
-                                "--batch_size", str(bs),
-                                "--epochs", str(epochs),
-                                "--k", str(k),
-                                "--model_name", model_name,
-                                "--finetune", finetune
-                            ]
-                            result = subprocess.run(cmd, capture_output=True, text=True)
-                            print(result.stdout)
-                            
-                            if result.stderr:
-                                print("Error:", result.stderr)
-
+            cmd = [
+                "python", script,
+                "--batch_size", str(bs),
+                "--epochs", str(epochs),
+                "--k", str(k),
+                "--data_file", dataset,
+                "--model_name", model_name,
+                "--finetune", finetune,
+                "--hidden_dropout", str(h_dropout),
+                "--attn_dropout", str(a_dropout),
+                "--lr", str(lr),
+                "--decay", str(decay),
+                "--stoch_depth", str(stoch_depth),
+                "--label_smoothing", str(label_smooth_val),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            print(result.stdout)
+            
+            if result.stderr:
+                print("Error:", result.stderr)  
 
 if __name__ == "__main__":
     main()

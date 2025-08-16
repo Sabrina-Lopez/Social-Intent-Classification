@@ -1,0 +1,16 @@
+numpy>=1.24,<2.0
+scipy
+scikit-learn
+matplotlib
+pillow
+torch
+torchvision
+tqdm
+av
+opencv-python
+transformers==4.53.3
+datasets
+huggingface_hub
+wandb
+python-dotenv
+regex

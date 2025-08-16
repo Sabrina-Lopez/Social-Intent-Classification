@@ -1,0 +1,12 @@
+python3.11 -m venv live-robotics-pip 
+source live-robotics-pip/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+
+==================================
+
+python3.11 -m venv live-robotics-pip2 
+source live-robotics-pip2/bin/activate
+pip install --upgrade pip
+pip install -r requirements2.txt

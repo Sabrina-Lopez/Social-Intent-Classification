@@ -5,8 +5,8 @@ import csv
 
 
 vid_length = 100
-modBool = True
-mixBool = True
+modBool = False
+mixBool = False
 
 data_path_name = None
 train_data_csv_name = None
@@ -22,11 +22,17 @@ if modBool:
     train_data_csv_name = 'train_data_' + str(vid_length) + '_mod' + '_single' + '.csv'
     test_data_csv_name =  'test_data_' + str(vid_length) + '_mod' + '_single' + '.csv'
 else:
+  data_path_name = 'data_' + str(vid_length) + '_unmod_latest'
+  train_data_csv_name = 'train_data_' + str(vid_length) + '_unmod_latest' + '.csv'
+  test_data_csv_name =  'test_data_' + str(vid_length) + '_unmod_latest' + '.csv'
+
+dataset = os.path.join('./', data_path_name)
+"""
+else:
   data_path_name = 'data_' + str(vid_length) + '_unmod'
   train_data_csv_name = 'train_data_' + str(vid_length) + '_unmod' + '.csv'
   test_data_csv_name =  'test_data_' + str(vid_length) + '_unmod' + '.csv'
-
-dataset = os.path.join('./', data_path_name)
+"""
 
 # Define output CSV files for train, test, and validation
 csv_outputs = {
